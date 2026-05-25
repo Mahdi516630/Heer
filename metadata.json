@@ -1,0 +1,6 @@
+{
+  "name": "Hello Here",
+  "description": "A high-fidelity hybrid social network inspired by Instagram and Facebook, featuring a photo-optimized feed, interactive reels, and premium End-to-End Encrypted (E2EE) messaging with WebRTC audio and video calls.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
