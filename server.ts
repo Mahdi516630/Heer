@@ -111,6 +111,9 @@ let messages: Message[] = [];
 let notifications: Notification[] = [];
 let callSessions: CallSession[] = [];
 
+// Real-time peer connection heartbeats mapping
+const userHeartbeats = new Map<string, number>();
+
 // Automatic Tables Bootstrapper
 async function initDatabase() {
   if (pool) {
@@ -1281,12 +1284,20 @@ app.post("/api/calls/initiate", async (req, res) => {
     );
   }
 
+  // Real-time detection of receiver heartbeats to switch calling vs ringing
+  const receiverLastActive = userHeartbeats.get(receiverId);
+  // Polling occurs every 2.2 seconds, let's use a safe window of 7.5 seconds
+  const isReceiverOnline = receiverLastActive ? (Date.now() - receiverLastActive < 7500) : false;
+  const initialStatus = isReceiverOnline ? "ringing" : "calling";
+
+  console.log(`[Call Initiation] Target user ${receiverId} online state: ${isReceiverOnline}. Set state to: ${initialStatus}`);
+
   const newCall: CallSession = {
     id: `call-${Date.now()}`,
     senderId,
     receiverId,
     type,
-    status: "calling",
+    status: initialStatus,
     createdAt: new Date().toISOString(),
     signals: []
   };
@@ -1307,27 +1318,6 @@ app.post("/api/calls/initiate", async (req, res) => {
     createdAt: new Date().toISOString(),
     read: false
   });
-
-  // Simulated auto-acceptance trigger: if after 2.2s the status is still 'calling'
-  setTimeout(async () => {
-    try {
-      if (pool) {
-        const queryRes = await pool.query("SELECT status FROM call_sessions WHERE id = $1", [newCall.id]);
-        if (queryRes.rows.length > 0 && queryRes.rows[0].status === "calling") {
-          console.log(`[Auto-responder] Auto-connecting solo test call session ${newCall.id}`);
-          await dbUpdateCallSession(newCall.id, "connected");
-        }
-      } else {
-        const call = callSessions.find(c => c.id === newCall.id);
-        if (call && call.status === "calling") {
-          console.log(`[Auto-responder] Auto-connecting memory call session ${newCall.id}`);
-          call.status = "connected";
-        }
-      }
-    } catch (err) {
-      console.warn("Auto-responder check triggered warning:", err);
-    }
-  }, 2200);
 
   res.json(newCall);
 });
@@ -1407,6 +1397,29 @@ app.get("/api/sync", async (req, res) => {
   const { userId, since } = req.query;
   if (!userId) {
     return res.status(400).json({ error: "userId is required for sync" });
+  }
+
+  const userIdStr = userId as string;
+  // Record heartbeat
+  userHeartbeats.set(userIdStr, Date.now());
+
+  // Transition any incoming calls facing this user from 'calling' to 'ringing' because they are online
+  if (pool) {
+    try {
+      await pool.query(
+        "UPDATE call_sessions SET status = 'ringing' WHERE receiverId = $1 AND status = 'calling'",
+        [userIdStr]
+      );
+    } catch (err) {
+      console.error("[PG ERROR] auto-upgraded incoming call status to ringing:", err);
+    }
+  } else {
+    callSessions.forEach(c => {
+      if (c.receiverId === userIdStr && c.status === "calling") {
+        c.status = "ringing";
+        console.log(`[Heartbeat Fallback] Transited call ${c.id} to ringing for online receiver ${userIdStr}`);
+      }
+    });
   }
 
   const sinceTime = since ? new Date(since as string).getTime() : 0;

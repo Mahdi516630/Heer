@@ -411,13 +411,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleWipeDatabase}
-              disabled={isWiping}
-              className="text-[10px] font-mono bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-500/30 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {isWiping ? "Nettoyage..." : "Purger la Base Neon"}
-            </button>
             <span className="text-[10px] uppercase font-mono bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1 text-neutral-400">
               Actif: @{activeUser.username}
             </span>

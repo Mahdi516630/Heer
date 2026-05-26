@@ -720,7 +720,9 @@ export default function CallInterface({
             <p className="text-neutral-400 font-mono text-sm mb-6">@{contact.username}</p>
             
             <p className="text-sm tracking-widest text-indigo-400 animate-pulse font-mono font-medium uppercase">
-              {isCaller ? "Appel chiffré sortant..." : "Appel chiffré entrant..."}
+              {isCaller 
+                ? (currentCall.status === "calling" ? "Appel..." : "Appel en cours...") 
+                : `Appel ${currentCall.type === 'video' ? 'vidéo' : 'audio'} entrant...`}
             </p>
           </div>
         )}
