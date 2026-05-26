@@ -26,9 +26,6 @@ export default function Navigation({
     { id: "feed", label: "Actualités", icon: Home },
     { id: "reels", label: "Reels", icon: Film },
     { id: "messages", label: "Messages", icon: MessageCircle, badge: unreadMessagesCount },
-    { id: "gmail", label: "Gmail", icon: Mail },
-    { id: "meet", label: "Google Meet", icon: Video },
-    { id: "chat", label: "Google Chat", icon: MessageSquare },
     { id: "notifications", label: "Notifications", icon: Bell, badge: unreadNotificationsCount },
     { id: "profile", label: "Profil", icon: User }
   ];

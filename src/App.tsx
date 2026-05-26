@@ -8,9 +8,6 @@ import NotificationsView from "./components/NotificationsView";
 import ProfileView from "./components/ProfileView";
 import CallInterface from "./components/CallInterface";
 import AuthScreen from "./components/AuthScreen";
-import GmailView from "./components/GmailView";
-import MeetView from "./components/MeetView";
-import ChatView from "./components/ChatView";
 import { ShieldCheck, LogIn, Users, Monitor, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -482,45 +479,6 @@ export default function App() {
                   onSendMessage={handleSendMessage}
                   onInitiateCall={handleInitiateCall}
                 />
-              </motion.div>
-            )}
-
-            {activeTab === "gmail" && (
-              <motion.div
-                key="gmail"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="w-full"
-              >
-                <GmailView />
-              </motion.div>
-            )}
-
-            {activeTab === "meet" && (
-              <motion.div
-                key="meet"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="w-full"
-              >
-                <MeetView />
-              </motion.div>
-            )}
-
-            {activeTab === "chat" && (
-              <motion.div
-                key="chat"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="w-full"
-              >
-                <ChatView />
               </motion.div>
             )}
 
