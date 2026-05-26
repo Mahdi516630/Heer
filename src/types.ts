@@ -9,6 +9,7 @@ export interface User {
   postsCount: number;
   publicKey?: string; // Hex coordinates or JWK for client-side E2EE
   email?: string;
+  password?: string;
 }
 
 export interface Comment {

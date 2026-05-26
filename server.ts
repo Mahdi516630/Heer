@@ -23,6 +23,7 @@ interface OtpStore {
   expiresAt: number;
   username?: string;
   fullName?: string;
+  password?: string;
 }
 let otps: OtpStore[] = [];
 
@@ -128,9 +129,16 @@ async function initDatabase() {
           followingCount INTEGER DEFAULT 0,
           postsCount INTEGER DEFAULT 0,
           publicKey TEXT,
-          email VARCHAR(255) UNIQUE
+          email VARCHAR(255) UNIQUE,
+          password TEXT
         );
       `);
+      try {
+        await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS password TEXT;");
+        console.log("[DATABASE MIGRATION] Safely asserted that password column exists in users table.");
+      } catch (err: any) {
+        console.warn("[DATABASE MIGRATION] Alter table warning:", err.message);
+      }
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);`);
 
       // 2. posts
@@ -252,7 +260,8 @@ async function dbGetUsers(): Promise<User[]> {
         followingCount: row.followingcount || 0,
         postsCount: row.postscount || 0,
         publicKey: row.publickey,
-        email: row.email
+        email: row.email,
+        password: row.password
       }));
     } catch (err) {
       console.error("[PG ERROR] dbGetUsers:", err);
@@ -265,16 +274,17 @@ async function dbAddUser(user: User): Promise<User> {
   if (pool) {
     try {
       await pool.query(
-        `INSERT INTO users (id, username, fullName, avatarUrl, bio, followersCount, followingCount, postsCount, publicKey, email)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO users (id, username, fullName, avatarUrl, bio, followersCount, followingCount, postsCount, publicKey, email, password)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (id) DO UPDATE SET
            username = EXCLUDED.username,
            fullName = EXCLUDED.fullName,
            avatarUrl = EXCLUDED.avatarUrl,
            bio = EXCLUDED.bio,
            publicKey = EXCLUDED.publicKey,
-           email = EXCLUDED.email`,
-        [user.id, user.username, user.fullName, user.avatarUrl, user.bio, user.followersCount, user.followingCount, user.postsCount, user.publicKey || null, user.email || null]
+           email = EXCLUDED.email,
+           password = COALESCE(EXCLUDED.password, users.password)`,
+        [user.id, user.username, user.fullName, user.avatarUrl, user.bio, user.followersCount, user.followingCount, user.postsCount, user.publicKey || null, user.email || null, user.password || null]
       );
       return user;
     } catch (err) {
@@ -827,12 +837,65 @@ app.post("/api/admin/clear-data", async (req, res) => {
   });
 });
 
-// Auth System with OTP & SMTP
+// Auth System with Password and OTP (Only for registration)
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: "Veuillez fournir un email et un mot de passe." });
+  }
+
+  try {
+    const dbUsers = await dbGetUsers();
+    const user = dbUsers.find(u => u.email?.toLowerCase() === email.trim().toLowerCase());
+
+    if (!user) {
+      return res.status(400).json({ error: "Identifiants incorrects. Aucun compte n'est enregistré avec cet e-mail." });
+    }
+
+    // Direct password match check. If legacy user has no password, let them log in and set it.
+    if (user.password && user.password !== password) {
+      return res.status(400).json({ error: "Mot de passe incorrect." });
+    } else if (!user.password) {
+      user.password = password;
+      await dbAddUser(user);
+      console.log(`[AUTH] Set legacy user password on login: ${user.username}`);
+    }
+
+    res.json({
+      success: true,
+      user
+    });
+  } catch (err: any) {
+    console.error("[AUTH LOGIN ERROR]:", err);
+    res.status(500).json({ error: "Erreur interne du serveur lors de la connexion." });
+  }
+});
+
 app.post("/api/auth/send-otp", async (req, res) => {
-  const { email, username, fullName } = req.body;
+  const { email, username, fullName, password } = req.body;
   
   if (!email || !email.includes("@")) {
     return res.status(400).json({ error: "Adresse email invalide" });
+  }
+
+  if (!password) {
+    return res.status(400).json({ error: "Un mot de passe est obligatoire pour l'inscription." });
+  }
+
+  // Check email and username uniqueness early during registration
+  const dbUsers = await dbGetUsers();
+  const existingEmail = dbUsers.find(u => u.email?.toLowerCase() === email.trim().toLowerCase());
+  if (existingEmail) {
+    return res.status(400).json({ error: "Cette adresse email est déjà enregistrée. Veuillez vous connecter." });
+  }
+
+  const formattedUsername = username ? username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "") : "";
+  if (formattedUsername) {
+    const existingUsername = dbUsers.find(u => u.username?.toLowerCase() === formattedUsername);
+    if (existingUsername) {
+      return res.status(400).json({ error: "Cet identifiant (@) est déjà pris. Veuillez en choisir un autre." });
+    }
   }
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -841,13 +904,14 @@ app.post("/api/auth/send-otp", async (req, res) => {
   // Remove existing OTPs for this email
   otps = otps.filter(o => o.email !== email);
   
-  // Store OTP
+  // Store OTP with Password
   otps.push({
     email,
     otp,
     expiresAt,
-    username,
-    fullName
+    username: formattedUsername,
+    fullName: fullName ? fullName.trim() : undefined,
+    password
   });
 
   const result = await sendOtpEmail(email, otp);
@@ -900,7 +964,8 @@ app.post("/api/auth/verify-otp", async (req, res) => {
       followersCount: 0,
       followingCount: 0,
       postsCount: 0,
-      email
+      email,
+      password: stored.password // Store the registration password
     };
     
     await dbAddUser(user);

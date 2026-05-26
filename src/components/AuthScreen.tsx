@@ -13,6 +13,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   
   // Fields
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
   const [otp, setOtp] = useState("");
@@ -23,61 +24,97 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
   const [success, setSuccess] = useState("");
   const [fallbackOtp, setFallbackOtp] = useState<string | null>(null);
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccess("");
     setFallbackOtp(null);
 
-    if (!email.trim() || !email.includes("@")) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !trimmedEmail.includes("@")) {
       setError("Veuillez saisir une adresse email valide.");
       return;
     }
 
-    if (mode === "register") {
-      if (!username.trim()) {
-        setError("Veuillez choisir un nom d'utilisateur (@).");
-        return;
-      }
-      if (!fullName.trim()) {
-        setError("Veuillez renseigner votre nom complet.");
-        return;
-      }
+    if (!password) {
+      setError("Veuillez saisir un mot de passe.");
+      return;
     }
 
     setLoading(true);
 
-    try {
-      const response = await fetch("/api/auth/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          ...(mode === "register" ? {
-            username: username.trim().toLowerCase().replace(/[^a-z0-9_]/g, ""),
-            fullName: fullName.trim()
-          } : {})
-        })
-      });
+    if (mode === "login") {
+      // Direct Password Login (No OTP verification)
+      try {
+        const response = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: trimmedEmail,
+            password
+          })
+        });
 
-      const data = await response.json();
-      setLoading(false);
+        const data = await response.json();
+        setLoading(false);
 
-      if (response.ok && data.success) {
-        setStep("otp");
-        setSuccess("Code de sécurité envoyé ! Vérifiez votre messagerie.");
-        
-        // Handle developer console fallback gracefully
-        if ("fallbackOtp" in data && data.fallbackOtp) {
-          setFallbackOtp(data.fallbackOtp);
+        if (response.ok && data.success && data.user) {
+          setSuccess("Connexion réussie ! Redirection...");
+          setTimeout(() => {
+            onAuthSuccess(data.user);
+          }, 800);
+        } else {
+          setError(data.error || "Adresse email ou mot de passe incorrect.");
         }
-      } else {
-        setError(data.error || "Une erreur est survenue lors de l'envoi de l'OTP.");
+      } catch (err) {
+        setLoading(false);
+        setError("Impossible de contacter le serveur d'authentification.");
+        console.error(err);
       }
-    } catch (err) {
-      setLoading(false);
-      setError("Impossible de contacter le serveur d'authentification.");
-      console.error(err);
+    } else {
+      // Inscription/Register: Validate fields first, then send OTP
+      if (!username.trim()) {
+        setError("Veuillez choisir un nom d'utilisateur (@).");
+        setLoading(false);
+        return;
+      }
+      if (!fullName.trim()) {
+        setError("Veuillez renseigner votre nom complet.");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/auth/send-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: trimmedEmail,
+            username: username.trim().toLowerCase().replace(/[^a-z0-9_]/g, ""),
+            fullName: fullName.trim(),
+            password
+          })
+        });
+
+        const data = await response.json();
+        setLoading(false);
+
+        if (response.ok && data.success) {
+          setStep("otp");
+          setSuccess("Code de sécurité envoyé ! Vérifiez votre messagerie.");
+          
+          // Handle developer console fallback gracefully
+          if ("fallbackOtp" in data && data.fallbackOtp) {
+            setFallbackOtp(data.fallbackOtp);
+          }
+        } else {
+          setError(data.error || "Une erreur est survenue lors du démarrage de l'inscription.");
+        }
+      } catch (err) {
+        setLoading(false);
+        setError("Impossible de contacter le serveur d'authentification.");
+        console.error(err);
+      }
     }
   };
 
@@ -107,7 +144,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
       setLoading(false);
 
       if (response.ok && data.success && data.user) {
-        setSuccess("Vérification réussie ! Connexion en cours...");
+        setSuccess("Véritable confirmation d'inscription ! Bienvenue sur HEER.");
         setTimeout(() => {
           onAuthSuccess(data.user);
         }, 800);
@@ -180,7 +217,7 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
 
         {/* Step Rendering */}
         {step === "input" ? (
-          <form onSubmit={handleSendOtp} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             {/* Mode Switcher */}
             <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-1 flex mb-6">
               <button
@@ -260,17 +297,38 @@ export default function AuthScreen({ onAuthSuccess }: AuthScreenProps) {
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2 pl-10 pr-4 text-sm text-neutral-200 focus:outline-none focus:border-pink-500 transition-colors"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] text-neutral-400 uppercase tracking-widest font-mono font-bold">Mot de passe</label>
+              <div className="relative">
+                <Key className="absolute left-3 top-2.5 w-4.5 h-4.5 text-neutral-500" />
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2 pl-10 pr-4 text-sm text-neutral-200 focus:outline-none focus:border-pink-500 transition-colors font-mono"
+                />
+              </div>
               <p className="text-[10px] text-neutral-500 leading-normal pt-1 font-mono">
-                // Entrez n'importe quel email (ex: aria@heer.com, leo@heer.com ou le vôtre)
+                {mode === "login" 
+                  ? "// Pour un compte existant. S'il n'a pas de mot de passe, saisir n'importe quel mot de passe l'initialisera." 
+                  : "// Définissez un mot de passe de sécurité pour protéger votre clé de chiffrement."}
               </p>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider hover:opacity-90 active:scale-98 transition-all flex items-center justify-center gap-2 shadow-lg shadow-pink-500/10 cursor-pointer disabled:opacity-50"
+              className="w-full bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider hover:opacity-90 active:scale-98 transition-all flex items-center justify-center gap-2 shadow-lg shadow-pink-500/10 cursor-pointer disabled:opacity-50 mt-2"
             >
-              <span>{loading ? "Génération du code..." : "Demander mon code de connexion"}</span>
+              <span>
+                {loading 
+                  ? (mode === "login" ? "Connexion en cours..." : "Génération du code...") 
+                  : (mode === "login" ? "Se connecter" : "S'inscrire (recevoir un code OTP)")}
+              </span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
